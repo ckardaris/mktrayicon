@@ -190,294 +190,294 @@ gpointer watch_fifo(gpointer argv)
 			return NULL;
 		}
 
-	/* inner is for read */
-	while (1) {
-		read = fgets(buf, 1024 * sizeof(char), fifo);
+		/* inner is for read */
+		while (1) {
+			read = fgets(buf, 1024 * sizeof(char), fifo);
 
-		if (read == NULL) {
-			/* no more data in pipe, reopen and block */
-			fclose(fifo);
-			goto outer;
-		}
-
-		/* trim string */
-		while ((*read == '\n' || *read == ' ' || *read == '\t') && *read != '\0') {
-			read++;
-		}
-
-		if (*read == '\0') {
-			/* empty command */
-			continue;
-		}
-
-		cmd = *read;
-		len = strlen(read);
-		if (len < 3) {
-			param = NULL;
-		} else if (*(read + 2) != '\'' && *(read + 2) != '"') {
-			// unquoted string
-			read += 2;
-			len -= 2;
-			// trim trailing whitespace
-			i = len - 1;
-			while (i > 0) {
-				if (!isspace(read[i])) {
-					len = i + 1;
-					read[len] = '\0';
-					break;
-				}
-				i -= 1;
-			}
-			param = malloc((len+1)*sizeof(char));
-			strncpy(param, read, len+1);
-		} else {
-			// quoted string
-			quote = *(read+2);
-			read += 3;
-			len -= 3;
-			*tmp = '\0';
-			*(tmp+1024-1) = '\0';
-			// keep track of what we have so far
-			strncpy(tmp, read, 1023);
-
-			// now keep reading until we have the end quote
-			while (1) {
-				// check for terminating '
-				if (len != 0) {
-					// search backwards past whitespace
-					i = len - 1;
-					while (i > 0) {
-						if (!isspace(tmp[i])) {
-							break;
-						}
-						i -= 1;
-					}
-					if (tmp[i] == quote) {
-						// maybe the end!
-						// let's make sure it isn't escaped
-						if (i >= 2 && tmp[i-2] == '\\') {
-						} else {
-							// it's not!
-							// we're done.
-							// trim off the ' and
-							// any whitespace we walked past
-							len = i;
-							tmp[len] = '\0';
-							break;
-						}
-					}
-				}
-
-				if (len == 1023) {
-					// we can't read any more
-					// but also haven't found the end
-					// forcibly terminate the string
-					fprintf(stderr, "Quoted string too long (max 1023 chars)\n");
-					break;
-				}
-
-				// we don't have the end of the string yet
-				read = fgets(buf, 1024 * sizeof(char), fifo);
-				if (read == NULL) {
-					/* no more data in pipe, reopen and block */
-					fclose(fifo);
-					goto outer;
-				}
-				// note that we don't trim here, because we're
-				// in a quoted string.
-				strncpy(tmp + len, read, 1023 - len);
-				len += strlen(tmp + len);
+			if (read == NULL) {
+				/* no more data in pipe, reopen and block */
+				fclose(fifo);
+				goto outer;
 			}
 
-			// quoted string is now in param[0:len]
-			param = malloc((len+1)*sizeof(char));
-			strncpy(param, tmp, len+1);
-		}
-
-		switch (cmd) {
-		case 'q':
-			gdk_threads_add_idle(do_quit, param);
-			if (param != NULL) {
-				free(param);
-			}
-			break;
-		case 't': /* tooltip */
-			gdk_threads_add_idle(set_tooltip, param);
-			break;
-		case 'i': /* icon */
-			gdk_threads_add_idle(set_icon, param);
-			break;
-		case 'h': /* hide */
-			gdk_threads_add_idle(set_visible, (void *)0);
-			if (param != NULL) {
-				free(param);
-			}
-			break;
-		case 's': /* show */
-			gdk_threads_add_idle(set_visible, (void *)1);
-			if (param != NULL) {
-				free(param);
-			}
-			break;
-		case 'c': /* click */
-			if (onclick != NULL) {
-				free(onclick);
-				onclick = NULL;
+			/* trim string */
+			while ((*read == '\n' || *read == ' ' || *read == '\t') && *read != '\0') {
+				read++;
 			}
 
-			if (param != NULL && *param == '\0') {
-#ifdef DEBUG
-				printf("Removing onclick handler\n");
-#endif
-				free(param);
-				break;
+			if (*read == '\0') {
+				/* empty command */
+				continue;
 			}
 
-			onclick = param;
-#ifdef DEBUG
-			printf("Setting onclick handler to '%s'\n", onclick);
-#endif
-			break;
-		case 'm': /* menu */
-			if (onmenu != NULL){
-				//destroy the previous menu
-				for (int i = 0; i < menusize; i++){
-					free(onmenu[i].name);
-					free(onmenu[i].action);
-					onmenu[i].name = NULL;
-					onmenu[i].action = NULL;
-				}
-				free(onmenu);
-				onmenu = NULL;
-				gtk_widget_destroy(menu);
-				menu = NULL;
-			}
-			
-			menusize = 0;
-			
-			if(!param)
-				break;
-			else if (*param == '\0') {
-#ifdef DEBUG
-				printf("Removing onmenu handler\n");
-#endif
-				free(param);
-				break;
-			}
-
-			/* This block makes sure that the parameter after 'm' is ready to be processed
-			 * We can't accept 2 straight commas, as it becomes ambiguous
-			 * We accept single quotes (') as another way to escape characters 
-			 * but they have to be even in number, or else it also becomes ambiguous
-			 */
-			int straight = 0;
-			int bars = 0;
-			int qEven = 1; // if single quotes are even -> we don't count anything 
-			for (int i = 0; i < len; i++){
-				if (param[i] == ',' && param[i-1] != '\\' && qEven){
-					straight++;
-					if(straight == 2)
+			cmd = *read;
+			len = strlen(read);
+			if (len < 3) {
+				param = NULL;
+			} else if (*(read + 2) != '\'' && *(read + 2) != '"') {
+				// unquoted string
+				read += 2;
+				len -= 2;
+				// trim trailing whitespace
+				i = len - 1;
+				while (i > 0) {
+					if (!isspace(read[i])) {
+						len = i + 1;
+						read[len] = '\0';
 						break;
-				}
-				else if (param[i] == '|' && param[i-1] != '\\' && qEven){
-					straight = 0;
-					bars++;
-				}
-				else if (param[i] == '\'' && param[i-1] != '\\'){
-					if (qEven)
-						qEven = 0;
-					else
-						qEven = 1;
-				}
-			}
-			if (straight == 2){
-				printf("Two straight ',' found. Use '\\' to escape\n");
-				free(param);
-				break;
-			}
-			if (!qEven){
-				printf("Odd number of single quotes found. Use '\\' to escape\n");
-				free(param);
-				break;
-			}
-			// End of block that checks the parameter
-
-			/*
-			 * The way we are going to handle the quotes is:
-			 * If at a point the quotes are odd that means that we are in between
-			 * quotes and we should read all characters as they are. That is not a 
-			 * problem generally, except for the '\' character. 
-			 * Our function strncpy_esc() reads this character and ignores it,
-			 * copying the next one in line.
-			 * So inside the quotes we will use the strncpy() function
-			 * We will modify our function accordingly
-			 */
-			
-			// Create the onmenu array which stores structs with name, action properties
-			menusize = bars + 1;
-			onmenu = malloc(menusize * sizeof(struct item));
-			menu = gtk_menu_new();
-			int last = -1;
-			int item = 0;
-			char lastFound = '|'; // what was the last delimiter processed
-			for(int i = 0; i < len; i++){
-				if (param[i] == ',' && param[i-1] != '\\' && qEven){
-					onmenu[item].name = save_word(param, i, last);
-					last = i;
-					lastFound = ',';
-				}
-				else if (param[i] == '|' && param[i-1] != '\\' && qEven){
-					if (lastFound == ','){ // we have found a ',' so we read an action
-						onmenu[item].action = save_word(param, i, last);
 					}
-					else { //this is a label-only entry
+					i -= 1;
+				}
+				param = malloc((len+1)*sizeof(char));
+				strncpy(param, read, len+1);
+			} else {
+				// quoted string
+				quote = *(read+2);
+				read += 3;
+				len -= 3;
+				*tmp = '\0';
+				*(tmp+1024-1) = '\0';
+				// keep track of what we have so far
+				strncpy(tmp, read, 1023);
+
+				// now keep reading until we have the end quote
+				while (1) {
+					// check for terminating '
+					if (len != 0) {
+						// search backwards past whitespace
+						i = len - 1;
+						while (i > 0) {
+							if (!isspace(tmp[i])) {
+								break;
+							}
+							i -= 1;
+						}
+						if (tmp[i] == quote) {
+							// maybe the end!
+							// let's make sure it isn't escaped
+							if (i >= 2 && tmp[i-2] == '\\') {
+							} else {
+								// it's not!
+								// we're done.
+								// trim off the ' and
+								// any whitespace we walked past
+								len = i;
+								tmp[len] = '\0';
+								break;
+							}
+						}
+					}
+
+					if (len == 1023) {
+						// we can't read any more
+						// but also haven't found the end
+						// forcibly terminate the string
+						fprintf(stderr, "Quoted string too long (max 1023 chars)\n");
+						break;
+					}
+
+					// we don't have the end of the string yet
+					read = fgets(buf, 1024 * sizeof(char), fifo);
+					if (read == NULL) {
+						/* no more data in pipe, reopen and block */
+						fclose(fifo);
+						goto outer;
+					}
+					// note that we don't trim here, because we're
+					// in a quoted string.
+					strncpy(tmp + len, read, 1023 - len);
+					len += strlen(tmp + len);
+				}
+
+				// quoted string is now in param[0:len]
+				param = malloc((len+1)*sizeof(char));
+				strncpy(param, tmp, len+1);
+			}
+
+			switch (cmd) {
+			case 'q':
+				gdk_threads_add_idle(do_quit, param);
+				if (param != NULL) {
+					free(param);
+				}
+				break;
+			case 't': /* tooltip */
+				gdk_threads_add_idle(set_tooltip, param);
+				break;
+			case 'i': /* icon */
+				gdk_threads_add_idle(set_icon, param);
+				break;
+			case 'h': /* hide */
+				gdk_threads_add_idle(set_visible, (void *)0);
+				if (param != NULL) {
+					free(param);
+				}
+				break;
+			case 's': /* show */
+				gdk_threads_add_idle(set_visible, (void *)1);
+				if (param != NULL) {
+					free(param);
+				}
+				break;
+			case 'c': /* click */
+				if (onclick != NULL) {
+					free(onclick);
+					onclick = NULL;
+				}
+
+				if (param != NULL && *param == '\0') {
+#ifdef DEBUG
+					printf("Removing onclick handler\n");
+#endif
+					free(param);
+					break;
+				}
+
+				onclick = param;
+#ifdef DEBUG
+				printf("Setting onclick handler to '%s'\n", onclick);
+#endif
+				break;
+			case 'm': /* menu */
+				if (onmenu != NULL){
+					//destroy the previous menu
+					for (int i = 0; i < menusize; i++){
+						free(onmenu[i].name);
+						free(onmenu[i].action);
+						onmenu[i].name = NULL;
+						onmenu[i].action = NULL;
+					}
+					free(onmenu);
+					onmenu = NULL;
+					gtk_widget_destroy(menu);
+					menu = NULL;
+				}
+				
+				menusize = 0;
+				
+				if(!param)
+					break;
+				else if (*param == '\0') {
+#ifdef DEBUG
+					printf("Removing onmenu handler\n");
+#endif
+					free(param);
+					break;
+				}
+
+				/* This block makes sure that the parameter after 'm' is ready to be processed
+				 * We can't accept 2 straight commas, as it becomes ambiguous
+				 * We accept single quotes (') as another way to escape characters 
+				 * but they have to be even in number, or else it also becomes ambiguous
+				 */
+				int straight = 0;
+				int bars = 0;
+				int qEven = 1; // if single quotes are even -> we don't count anything 
+				for (int i = 0; i < len; i++){
+					if (param[i] == ',' && param[i-1] != '\\' && qEven){
+						straight++;
+						if(straight == 2)
+							break;
+					}
+					else if (param[i] == '|' && param[i-1] != '\\' && qEven){
+						straight = 0;
+						bars++;
+					}
+					else if (param[i] == '\'' && param[i-1] != '\\'){
+						if (qEven)
+							qEven = 0;
+						else
+							qEven = 1;
+					}
+				}
+				if (straight == 2){
+					printf("Two straight ',' found. Use '\\' to escape\n");
+					free(param);
+					break;
+				}
+				if (!qEven){
+					printf("Odd number of single quotes found. Use '\\' to escape\n");
+					free(param);
+					break;
+				}
+				// End of block that checks the parameter
+
+				/*
+				 * The way we are going to handle the quotes is:
+				 * If at a point the quotes are odd that means that we are in between
+				 * quotes and we should read all characters as they are. That is not a 
+				 * problem generally, except for the '\' character. 
+				 * Our function strncpy_esc() reads this character and ignores it,
+				 * copying the next one in line.
+				 * So inside the quotes we will use the strncpy() function
+				 * We will modify our function accordingly
+				 */
+				
+				// Create the onmenu array which stores structs with name, action properties
+				menusize = bars + 1;
+				onmenu = malloc(menusize * sizeof(struct item));
+				menu = gtk_menu_new();
+				int last = -1;
+				int item = 0;
+				char lastFound = '|'; // what was the last delimiter processed
+				for(int i = 0; i < len; i++){
+					if (param[i] == ',' && param[i-1] != '\\' && qEven){
 						onmenu[item].name = save_word(param, i, last);
-						onmenu[item].action = malloc(1); // pointer has to be freeable
+						last = i;
+						lastFound = ',';
+					}
+					else if (param[i] == '|' && param[i-1] != '\\' && qEven){
+						if (lastFound == ','){ // we have found a ',' so we read an action
+							onmenu[item].action = save_word(param, i, last);
+						}
+						else { //this is a label-only entry
+							onmenu[item].name = save_word(param, i, last);
+							onmenu[item].action = malloc(1); // pointer has to be freeable
+							*onmenu[item].action = '\0';
+						}
+						last = i;
+						lastFound = '|';
+						item++;
+					}
+					else if (param[i] == '\'' && param[i-1] != '\\'){
+						if (qEven)
+							qEven = 0;
+						else
+							qEven = 1;
+					}
+				}
+				if(item < menusize){ //haven't read all actions because last one didn't end with a '|'
+					if (lastFound == ','){
+						onmenu[item].action = save_word(param, len, last);
+					}
+					else{
+						onmenu[item].name = save_word(param, len, last);
+						onmenu[item].action = malloc(1);
 						*onmenu[item].action = '\0';
 					}
-					last = i;
-					lastFound = '|';
-					item++;
 				}
-				else if (param[i] == '\'' && param[i-1] != '\\'){
-					if (qEven)
-						qEven = 0;
-					else
-						qEven = 1;
-				}
-			}
-			if(item < menusize){ //haven't read all actions because last one didn't end with a '|'
-				if (lastFound == ','){
-					onmenu[item].action = save_word(param, len, last);
-				}
-				else{
-					onmenu[item].name = save_word(param, len, last);
-					onmenu[item].action = malloc(1);
-					*onmenu[item].action = '\0';
-				}
-			}
 
-			// Now create the menu item widgets and attach them on the menu
-			for (int i = 0; i < menusize; i++){
+				// Now create the menu item widgets and attach them on the menu
+				for (int i = 0; i < menusize; i++){
 #ifdef DEBUG
-				printf("%d: %s -> %s\n", i,onmenu[i].name, onmenu[i].action);
+					printf("%d: %s -> %s\n", i,onmenu[i].name, onmenu[i].action);
 #endif
-				GtkWidget* w = gtk_menu_item_new_with_label(onmenu[i].name);
-				gtk_menu_shell_append(GTK_MENU_SHELL(menu), w);
-				g_signal_connect(G_OBJECT(w), "activate", G_CALLBACK(click_menu_item), NULL);
-			}
-			gtk_widget_show_all(menu);
-			free(param);
-			break;
-		default:
-			fprintf(stderr, "Unknown command: '%c'\n", *buf);
-			if (param != NULL) {
+					GtkWidget* w = gtk_menu_item_new_with_label(onmenu[i].name);
+					gtk_menu_shell_append(GTK_MENU_SHELL(menu), w);
+					g_signal_connect(G_OBJECT(w), "activate", G_CALLBACK(click_menu_item), NULL);
+				}
+				gtk_widget_show_all(menu);
 				free(param);
+				break;
+			default:
+				fprintf(stderr, "Unknown command: '%c'\n", *buf);
+				if (param != NULL) {
+					free(param);
+				}
 			}
-		}
 
-		gdk_flush();
-	}
+			gdk_flush();
+		}
 	}
 	return NULL;
 }
