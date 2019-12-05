@@ -19,12 +19,39 @@
  */
 char* strncpy_esc(char *dest, const char *src, size_t n)
 {
-	size_t i;
+	size_t i = 0;
 	size_t index = 0;
-	for (i = 0; i < n && src[i] != '\0'; i++){
-		if (src[i] != '\\'){
+	while (i < n && src[i] != '\0'){
+		if (src[i] == '\''){ 
+			/* 
+			 * this a real single quote; can't have been escaped
+			 * so we move accordingly, copying everything
+			 */
+			i++;
+			while (src[i] != '\''){
+				// here we escape only single quotes
+				if (src[i] == '\\' && src[i+1] == '\''){
+					dest[index] = '\'';
+					index++;
+					i+=2;
+				}
+				else{
+					dest[index] = src[i];
+					index++;
+					i++;
+				}
+			}
+			i++;
+		}
+		else if (src[i] != '\\'){
 			dest[index] = src[i];
 			index++;
+			i++;
+		}
+		else if(src[i+1] != '\0'){
+			dest[index] = src[i+1];
+			index++;
+			i+=2; // we skip next character since we copy it here
 		}
 	}
 	for ( ; index < n; index++)
@@ -67,6 +94,10 @@ void tray_icon_on_click(GtkStatusIcon *status_icon,
  */
 void click_menu_item(GtkMenuItem *menuitem, gpointer user_data)
 {
+	/*
+	 * We have to define what action it takes if multiple entries
+	 * are a label match. Currenly it executes all actions
+	 */
 	const char* label = gtk_menu_item_get_label(menuitem);
 	for (int i = 0; i < menusize; i++)
 		if(strcmp(label,onmenu[i].name) == 0 && fork() == 0)
@@ -334,19 +365,29 @@ gpointer watch_fifo(gpointer argv)
 				break;
 			}
 
-			// This block makes sure that the parameter after 'm' is ready to be processed
-			// We can't accept 2 straight commas, as it becomes ambiguous
+			/* This block makes sure that the parameter after 'm' is ready to be processed
+			 * We can't accept 2 straight commas, as it becomes ambiguous
+			 * We accept single quotes (') as another way to escape characters 
+			 * but they have to be even in number, or else it also becomes ambiguous
+			 */
 			int straight = 0;
 			int bars = 0;
+			int qEven = 1; // if single quotes are even -> we don't count anything 
 			for (int i = 0; i < len; i++){
-				if (param[i] == ',' && param[i-1] != '\\'){
+				if (param[i] == ',' && param[i-1] != '\\' && qEven){
 					straight++;
 					if(straight == 2)
 						break;
 				}
-				else if (param[i] == '|' && param[i-1] != '\\' ){
+				else if (param[i] == '|' && param[i-1] != '\\' && qEven){
 					straight = 0;
 					bars++;
+				}
+				else if (param[i] == '\'' && param[i-1] != '\\'){
+					if (qEven)
+						qEven = 0;
+					else
+						qEven = 1;
 				}
 			}
 			if (straight == 2){
@@ -354,7 +395,23 @@ gpointer watch_fifo(gpointer argv)
 				free(param);
 				break;
 			}
+			if (!qEven){
+				printf("Odd number of single quotes found. Use '\\' to escape\n");
+				free(param);
+				break;
+			}
 			// End of block that checks the parameter
+
+			/*
+			 * The way we are going to handle the quotes is:
+			 * If at a point the quotes are odd that means that we are in between
+			 * quotes and we should read all characters as they are. That is not a 
+			 * problem generally, except for the '\' character. 
+			 * Our function strncpy_esc() reads this character and ignores it,
+			 * copying the next one in line.
+			 * So inside the quotes we will use the strncpy() function
+			 * We will modify our function accordingly
+			 */
 			
 			// Create the onmenu array which stores structs with name, action properties
 			menusize = bars + 1;
@@ -364,12 +421,12 @@ gpointer watch_fifo(gpointer argv)
 			int item = 0;
 			char lastFound = '|'; // what was the last delimiter processed
 			for(int i = 0; i < len; i++){
-				if (param[i] == ',' && param[i-1] != '\\'){
+				if (param[i] == ',' && param[i-1] != '\\' && qEven){
 					onmenu[item].name = save_word(param, i, last);
 					last = i;
 					lastFound = ',';
 				}
-				else if (param[i] == '|' && param[i-1] != '\\'){
+				else if (param[i] == '|' && param[i-1] != '\\' && qEven){
 					if (lastFound == ','){ // we have found a ',' so we read an action
 						onmenu[item].action = save_word(param, i, last);
 					}
@@ -381,6 +438,12 @@ gpointer watch_fifo(gpointer argv)
 					last = i;
 					lastFound = '|';
 					item++;
+				}
+				else if (param[i] == '\'' && param[i-1] != '\\'){
+					if (qEven)
+						qEven = 0;
+					else
+						qEven = 1;
 				}
 			}
 			if(item < menusize){ //haven't read all actions because last one didn't end with a '|'
@@ -396,6 +459,9 @@ gpointer watch_fifo(gpointer argv)
 
 			// Now create the menu item widgets and attach them on the menu
 			for (int i = 0; i < menusize; i++){
+#ifdef DEBUG
+				printf("%d: %s -> %s\n", i,onmenu[i].name, onmenu[i].action);
+#endif
 				GtkWidget* w = gtk_menu_item_new_with_label(onmenu[i].name);
 				gtk_menu_shell_append(GTK_MENU_SHELL(menu), w);
 				g_signal_connect(G_OBJECT(w), "activate", G_CALLBACK(click_menu_item), NULL);
