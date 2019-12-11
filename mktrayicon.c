@@ -21,37 +21,31 @@ char* strncpy_esc(char *dest, const char *src, size_t n)
 {
 	size_t i = 0;
 	size_t index = 0;
+	size_t outQuoted = 1;
 	while (i < n && src[i] != '\0'){
-		if (src[i] == '\''){ 
-			/* 
-			 * this a real single quote; can't have been escaped
-			 * so we move accordingly, copying everything
-			 */
-			i++;
-			while (src[i] != '\'' && src[i] != '\0'){
-				// here we escape only single quotes
-				if (src[i] == '\\' && src[i+1] == '\''){
-					dest[index] = '\'';
-					index++;
-					i+=2;
-				}
-				else{
-					dest[index] = src[i];
-					index++;
-					i++;
-				}
-			}
+		if (src[i] == '\''){
+			outQuoted ^= 1; //xor
 			i++;
 		}
-		else if (src[i] != '\\'){
+		else if (src[i] == '\\'){
+			if( (outQuoted && src[i+1] != '\0') || (!outQuoted && src[i+1] == '\'') ){
+				dest[index] = src[i+1];
+				index++;
+				i+=2; 
+			}
+			else if (!outQuoted){ // non escaping '\' in quotes
+				dest[index] = src[i];
+				index++;
+				i++;
+			}
+			else{ // '\' in the end of string
+				i++;
+			}
+		}
+		else{
 			dest[index] = src[i];
 			index++;
 			i++;
-		}
-		else if(src[i+1] != '\0'){
-			dest[index] = src[i+1];
-			index++;
-			i+=2; // we skip next character since we copy it here
 		}
 	}
 	for ( ; index < n; index++)
