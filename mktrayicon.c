@@ -21,19 +21,19 @@ char* strncpy_esc(char *dest, const char *src, size_t n)
 {
 	size_t i = 0;
 	size_t index = 0;
-	size_t outQuoted = 1;
+	size_t inQuote = 0;
 	while (i < n && src[i] != '\0'){
 		if (src[i] == '\''){
-			outQuoted ^= 1; //xor
+			inQuote ^= 1; //xor
 			i++;
 		}
 		else if (src[i] == '\\'){
-			if( (outQuoted && src[i+1] != '\0') || (!outQuoted && src[i+1] == '\'') ){
+			if( (!inQuote && src[i+1] != '\0') || (inQuote && src[i+1] == '\'') ){
 				dest[index] = src[i+1];
 				index++;
 				i+=2; 
 			}
-			else if (!outQuoted){ // non escaping '\' in quotes
+			else if (inQuote){ // non escaping '\' in quotes
 				dest[index] = src[i];
 				index++;
 				i++;
@@ -366,22 +366,19 @@ gpointer watch_fifo(gpointer argv)
 				 */
 				int straight = 0;
 				int bars = 0;
-				int outQuoted = 1; // if single quotes are even -> we are outQuoted -> we can count 
+				int inQuote = 0; // if single quotes are odd -> we are inQuote -> we dont count 
 				for (int i = 0; i < len; i++){
-					if (param[i] == ',' && param[i-1] != '\\' && outQuoted){
+					if (param[i] == ',' && param[i-1] != '\\' && !inQuote){
 						straight++;
 						if(straight == 2)
 							break;
 					}
-					else if (param[i] == '|' && param[i-1] != '\\' && outQuoted){
+					else if (param[i] == '|' && param[i-1] != '\\' && !inQuote){
 						straight = 0;
 						bars++;
 					}
 					else if (param[i] == '\'' && param[i-1] != '\\'){
-						if (outQuoted)
-							outQuoted = 0;
-						else
-							outQuoted = 1;
+						inQuote ^= 1;
 					}
 				}
 				if (straight == 2){
@@ -389,7 +386,7 @@ gpointer watch_fifo(gpointer argv)
 					free(param);
 					break;
 				}
-				if (!outQuoted){
+				if (inQuote){
 					printf("Odd number of single quotes found. Use '\\' to escape\n");
 					free(param);
 					break;
@@ -415,12 +412,12 @@ gpointer watch_fifo(gpointer argv)
 				int item = 0;
 				char lastFound = '|'; // what was the last delimiter processed
 				for(int i = 0; i < len; i++){
-					if (param[i] == ',' && param[i-1] != '\\' && outQuoted){
+					if (param[i] == ',' && param[i-1] != '\\' && !inQuote){
 						onmenu[item].name = save_word(param, i, last);
 						last = i;
 						lastFound = ',';
 					}
-					else if (param[i] == '|' && param[i-1] != '\\' && outQuoted){
+					else if (param[i] == '|' && param[i-1] != '\\' && !inQuote){
 						if (lastFound == ','){ // we have found a ',' so we read an action
 							onmenu[item].action = save_word(param, i, last);
 						}
@@ -434,10 +431,7 @@ gpointer watch_fifo(gpointer argv)
 						item++;
 					}
 					else if (param[i] == '\'' && param[i-1] != '\\'){
-						if (outQuoted)
-							outQuoted = 0;
-						else
-							outQuoted = 1;
+						inQuote ^= 1;
 					}
 				}
 				if(item < menusize){ //haven't read all actions because last one didn't end with a '|'
